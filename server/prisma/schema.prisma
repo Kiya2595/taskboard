@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  OWNER
+  MEMBER
+  VIEWER
+}
+
+model User {
+  id          Int           @id @default(autoincrement())
+  email       String        @unique
+  name        String
+  password    String
+  createdAt   DateTime      @default(now())
+  memberships BoardMember[]
+  assignedCards Card[]      @relation("AssignedCards")
+}
+
+model Board {
+  id        Int           @id @default(autoincrement())
+  title     String
+  createdAt DateTime      @default(now())
+  members   BoardMember[]
+  lists     List[]
+}
+
+model BoardMember {
+  userId  Int
+  boardId Int
+  role    Role  @default(MEMBER)
+  user    User  @relation(fields: [userId], references: [id])
+  board   Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@id([userId, boardId])
+}
+
+model List {
+  id       Int    @id @default(autoincrement())
+  title    String
+  position Float
+  boardId  Int
+  board    Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  cards    Card[]
+}
+
+model Card {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String?
+  dueDate     DateTime?
+  position    Float
+  listId      Int
+  assigneeId  Int?
+  list        List      @relation(fields: [listId], references: [id], onDelete: Cascade)
+  assignee    User?     @relation("AssignedCards", fields: [assigneeId], references: [id])
+}
