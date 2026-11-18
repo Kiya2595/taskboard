@@ -69,3 +69,81 @@ button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
+.page.wide {
+  max-width: none;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+button.secondary {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+.add-form {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.add-form input {
+  flex: 1;
+  min-width: 0;
+}
+
+.board-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.board-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  color: inherit;
+  text-decoration: none;
+}
+
+.lists {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: 16px;
+}
+
+.list {
+  flex: 0 0 280px;
+  background: #e5e7eb;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.list h3 {
+  margin: 0 0 8px;
+}
+
+.list .add-form {
+  margin: 8px 0 0;
+}
+
+.card {
+  background: white;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.card p {
+  margin: 4px 0 0;
+}
