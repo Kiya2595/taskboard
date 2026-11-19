@@ -237,4 +237,43 @@ router.delete("/lists/:listId", async (req, res) => {
   await prisma.list.delete({ where: { id: listId } });
   res.json({ ok: true });
 });
+
+const moveSchema = z.object({
+  listId: z.number().int(),
+  position: z.number(),
+});
+
+// Move a card to a list and position (used by drag and drop)
+router.patch("/cards/:cardId/move", async (req, res) => {
+  const cardId = Number(req.params.cardId);
+  if (!Number.isInteger(cardId)) {
+    res.status(400).json({ error: "Invalid card id" });
+    return;
+  }
+
+  const access = await checkCardAccess(cardId, res.locals.userId);
+  if ("error" in access) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+
+  const parsed = moveSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ errors: parsed.error.issues.map((i) => i.message) });
+    return;
+  }
+
+  // The target list must belong to the same board as the card
+  const target = await prisma.list.findUnique({ where: { id: parsed.data.listId } });
+  if (!target || target.boardId !== access.card.list.boardId) {
+    res.status(400).json({ error: "Invalid target list" });
+    return;
+  }
+
+  const card = await prisma.card.update({
+    where: { id: cardId },
+    data: { listId: parsed.data.listId, position: parsed.data.position },
+  });
+  res.json(card);
+});
 export default router;

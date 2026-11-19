@@ -1,5 +1,23 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  closestCorners,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { api } from "../api";
 
 type Card = {
@@ -60,11 +78,13 @@ function AddForm({
 function CardItem({
   card,
   canEdit,
+  handle,
   onSave,
   onDelete,
 }: {
   card: Card;
   canEdit: boolean;
+  handle?: ReactNode;
   onSave: (cardId: number, changes: CardChanges) => Promise<void>;
   onDelete: (cardId: number) => Promise<void>;
 }) {
@@ -110,7 +130,10 @@ function CardItem({
 
   return (
     <div className="card">
-      <strong>{card.title}</strong>
+      <div className="card-top">
+        <strong>{card.title}</strong>
+        {handle}
+      </div>
       {card.description && <p className="muted">{card.description}</p>}
       {canEdit && (
         <div className="row">
@@ -131,10 +154,122 @@ function CardItem({
   );
 }
 
+function SortableCard({
+  card,
+  canEdit,
+  onSave,
+  onDelete,
+}: {
+  card: Card;
+  canEdit: boolean;
+  onSave: (cardId: number, changes: CardChanges) => Promise<void>;
+  onDelete: (cardId: number) => Promise<void>;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: `c-${card.id}`, disabled: !canEdit });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <CardItem
+        card={card}
+        canEdit={canEdit}
+        onSave={onSave}
+        onDelete={onDelete}
+        handle={
+          canEdit ? (
+            <span className="handle" title="Drag to move" {...attributes} {...listeners}>
+              ⠿
+            </span>
+          ) : null
+        }
+      />
+    </div>
+  );
+}
+
+function ListColumn({
+  list,
+  canEdit,
+  onRename,
+  onDelete,
+  onAddCard,
+  onSaveCard,
+  onDeleteCard,
+}: {
+  list: List;
+  canEdit: boolean;
+  onRename: (list: List) => void;
+  onDelete: (list: List) => void;
+  onAddCard: (listId: number, title: string) => Promise<void>;
+  onSaveCard: (cardId: number, changes: CardChanges) => Promise<void>;
+  onDeleteCard: (cardId: number) => Promise<void>;
+}) {
+  const { setNodeRef } = useDroppable({ id: `l-${list.id}`, disabled: !canEdit });
+
+  return (
+    <div className="list" ref={setNodeRef}>
+      <div className="list-header">
+        <h3>{list.title}</h3>
+        {canEdit && (
+          <div className="row">
+            <button className="link" onClick={() => onRename(list)}>
+              Rename
+            </button>
+            <button className="link danger" onClick={() => onDelete(list)}>
+              Delete
+            </button>
+          </div>
+        )}
+      </div>
+
+      <SortableContext
+        items={list.cards.map((c) => `c-${c.id}`)}
+        strategy={verticalListSortingStrategy}
+      >
+        {list.cards.map((card) => (
+          <SortableCard
+            key={card.id}
+            card={card}
+            canEdit={canEdit}
+            onSave={onSaveCard}
+            onDelete={onDeleteCard}
+          />
+        ))}
+      </SortableContext>
+
+      {canEdit && (
+        <AddForm
+          placeholder="Add a card"
+          label="Add"
+          onAdd={(title) => onAddCard(list.id, title)}
+        />
+      )}
+    </div>
+  );
+}
+
 export default function BoardPage() {
   const { id } = useParams();
   const [board, setBoard] = useState<Board | null>(null);
   const [error, setError] = useState("");
+  const [activeCardId, setActiveCardId] = useState<number | null>(null);
+
+  // A drag only starts after the pointer moves 5px, so clicks on buttons still work
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
+
+  function loadBoard() {
+    api<Board>(`/boards/${id}`)
+      .then(setBoard)
+      .catch((err) => showError(err));
+  }
 
   useEffect(() => {
     api<Board>(`/boards/${id}`)
@@ -257,6 +392,86 @@ export default function BoardPage() {
     }
   }
 
+  function handleDragStart(event: DragStartEvent) {
+    const activeId = String(event.active.id);
+    if (activeId.startsWith("c-")) setActiveCardId(Number(activeId.slice(2)));
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    setActiveCardId(null);
+    const { active, over } = event;
+    if (!over || !board) return;
+
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    if (!activeId.startsWith("c-") || activeId === overId) return;
+
+    const cardId = Number(activeId.slice(2));
+    const overIsList = overId.startsWith("l-");
+    const overNumber = Number(overId.slice(2));
+
+    const source = board.lists.find((l) => l.cards.some((c) => c.id === cardId));
+    const target = overIsList
+      ? board.lists.find((l) => l.id === overNumber)
+      : board.lists.find((l) => l.cards.some((c) => c.id === overNumber));
+    if (!source || !target) return;
+
+    const card = source.cards.find((c) => c.id === cardId);
+    if (!card) return;
+
+    // Build the target list's new order
+    let newCards: Card[];
+    if (source.id === target.id) {
+      const oldIndex = source.cards.findIndex((c) => c.id === cardId);
+      const newIndex = overIsList
+        ? source.cards.length - 1
+        : source.cards.findIndex((c) => c.id === overNumber);
+      if (oldIndex === newIndex) return;
+      newCards = arrayMove(source.cards, oldIndex, newIndex);
+    } else {
+      const insertAt = overIsList
+        ? target.cards.length
+        : target.cards.findIndex((c) => c.id === overNumber);
+      newCards = [...target.cards];
+      newCards.splice(insertAt, 0, card);
+    }
+
+    // New position = between the neighbours (average of their positions)
+    const index = newCards.findIndex((c) => c.id === cardId);
+    const prev = newCards[index - 1]?.position;
+    const next = newCards[index + 1]?.position;
+    let position = 1;
+    if (prev !== undefined && next !== undefined) position = (prev + next) / 2;
+    else if (prev !== undefined) position = prev + 1;
+    else if (next !== undefined) position = next - 1;
+
+    newCards[index] = { ...card, listId: target.id, position };
+
+    // Update the screen right away, then save to the server
+    setBoard(
+      (b) =>
+        b && {
+          ...b,
+          lists: b.lists.map((l) => {
+            if (l.id === target.id) return { ...l, cards: newCards };
+            if (l.id === source.id) {
+              return { ...l, cards: l.cards.filter((c) => c.id !== cardId) };
+            }
+            return l;
+          }),
+        }
+    );
+    setError("");
+
+    api(`/cards/${cardId}/move`, {
+      method: "PATCH",
+      body: JSON.stringify({ listId: target.id, position }),
+    }).catch((err) => {
+      showError(err);
+      loadBoard(); // put the screen back in sync with the server
+    });
+  }
+
   if (!board) {
     return (
       <div className="page">
@@ -267,6 +482,8 @@ export default function BoardPage() {
   }
 
   const canEdit = board.role !== "VIEWER";
+  const activeCard =
+    board.lists.flatMap((l) => l.cards).find((c) => c.id === activeCardId) ?? null;
 
   return (
     <div className="page wide">
@@ -274,49 +491,42 @@ export default function BoardPage() {
       <h1>{board.title}</h1>
       {error && <p className="error">{error}</p>}
 
-      <div className="lists">
-        {board.lists.map((list) => (
-          <div className="list" key={list.id}>
-            <div className="list-header">
-              <h3>{list.title}</h3>
-              {canEdit && (
-                <div className="row">
-                  <button className="link" onClick={() => renameList(list)}>
-                    Rename
-                  </button>
-                  <button className="link danger" onClick={() => deleteList(list)}>
-                    Delete
-                  </button>
-                </div>
-              )}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={() => setActiveCardId(null)}
+      >
+        <div className="lists">
+          {board.lists.map((list) => (
+            <ListColumn
+              key={list.id}
+              list={list}
+              canEdit={canEdit}
+              onRename={renameList}
+              onDelete={deleteList}
+              onAddCard={addCard}
+              onSaveCard={updateCard}
+              onDeleteCard={deleteCard}
+            />
+          ))}
+
+          {canEdit && (
+            <div className="list">
+              <AddForm placeholder="Add a list" label="Add list" onAdd={addList} />
             </div>
+          )}
+        </div>
 
-            {list.cards.map((card) => (
-              <CardItem
-                key={card.id}
-                card={card}
-                canEdit={canEdit}
-                onSave={updateCard}
-                onDelete={deleteCard}
-              />
-            ))}
-
-            {canEdit && (
-              <AddForm
-                placeholder="Add a card"
-                label="Add"
-                onAdd={(title) => addCard(list.id, title)}
-              />
-            )}
-          </div>
-        ))}
-
-        {canEdit && (
-          <div className="list">
-            <AddForm placeholder="Add a list" label="Add list" onAdd={addList} />
-          </div>
-        )}
-      </div>
+        <DragOverlay>
+          {activeCard ? (
+            <div className="card dragging">
+              <strong>{activeCard.title}</strong>
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
     </div>
   );
 }

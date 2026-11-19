@@ -192,3 +192,23 @@ textarea {
 .card input {
   width: 100%;
 }
+
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.handle {
+  cursor: grab;
+  color: #9ca3af;
+  user-select: none;
+  touch-action: none;
+  padding: 0 4px;
+}
+
+.card.dragging {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+  cursor: grabbing;
+}
