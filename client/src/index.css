@@ -147,3 +147,48 @@ button.secondary {
 .card p {
   margin: 4px 0 0;
 }
+.row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.list-header h3 {
+  margin: 0;
+}
+
+.list-header .row {
+  margin-top: 0;
+}
+
+button.link {
+  background: none;
+  color: #2563eb;
+  padding: 0;
+  font-size: 0.875rem;
+}
+
+button.link.danger {
+  color: #b91c1c;
+}
+
+textarea {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font: inherit;
+  resize: vertical;
+}
+
+.card input {
+  width: 100%;
+}
